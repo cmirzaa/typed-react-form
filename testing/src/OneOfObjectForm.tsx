@@ -1,5 +1,5 @@
 import React from "react";
-import { AnyListener, FormInput, FormState, Listener, useChildForm, useForm } from "typed-react-form";
+import { AnyListener, Field, FormState, Listener, useObjectField, useForm } from "typed-react-form";
 
 interface Apple {
     type: "apple";
@@ -31,7 +31,7 @@ export default function OneOfObjectArrayForm() {
                 await new Promise((res) => setTimeout(res, 500));
                 form.setState({ isSubmitting: false });
                 console.log(form.values);
-                form.setDefaultValues(form.values);
+                form.setValues(form.values);
             }}
         >
             <a href="https://github.com/CodeStix/typed-react-form/blob/master/example/src/OneOfObjectForm.tsx">View source code</a>
@@ -59,7 +59,7 @@ export default function OneOfObjectArrayForm() {
 
 function AppleOrBreadForm(props: { parent: FormState<FormData> }) {
     // Create a new form based on the 'breadOrApple' field
-    const form = useChildForm(props.parent, "breadOrApple");
+    const form = useObjectField(props.parent, "breadOrApple");
     return (
         <div style={{ background: "#0001", padding: "1em", margin: "1em" }}>
             <label>Object type: </label>
@@ -95,7 +95,7 @@ function AppleForm({ form }: { form: FormState<Apple> }) {
         <div>
             <h4>Apple editor</h4>
             <p>Select the color of your apple</p>
-            <FormInput form={form} type="color" name="color" />
+            <Field form={form} type="color" name="color" />
         </div>
     );
 }
@@ -105,7 +105,7 @@ function BreadForm({ form }: { form: FormState<Bread> }) {
         <div>
             <h4>Bread editor</h4>
             <p>Select the size of your bread</p>
-            <FormInput form={form} type="number" name="size" />
+            <Field form={form} type="number" name="size" />
         </div>
     );
 }

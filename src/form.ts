@@ -1,16 +1,16 @@
 export type ListenerCallback = () => void;
 export type ListenerMap = { [T in string]?: ListenerCallback };
-export type Validator<T, Error> = (values: T) => ErrorMap<T, Error> | Promise<ErrorMap<T, Error>>;
+export type Validator<T, Error> = (values: T) => ErrorType<T, Error> | undefined | Promise<ErrorType<T, Error> | undefined>;
 
-export type ChildFormMap<T, State, Error extends string> = {
-    [Key in keyof T]?: ChildFormState<T, Key, State, Error>;
+export type ChildFormMap<T extends object, State, Error extends string> = {
+    [K in KeysOfType<T, object>]?: ChildFormState<T, K, State, Error>;
 };
 
 export type DirtyMap<T> = {
     [Key in keyof T]?: boolean;
 };
 
-export type ErrorType<T, Error> = T extends object ? ErrorMap<T, Error> | Error : Error;
+export type ErrorType<T, Error> = Error | (T extends {} ? ErrorMap<NonNullable<T>, Error> : never);
 
 export type ErrorMap<T, Error> = {
     [Key in keyof T]?: ErrorType<T[Key], Error>;
@@ -19,37 +19,28 @@ export type ErrorMap<T, Error> = {
 export type DefaultError = string;
 export type DefaultState = { isSubmitting: boolean };
 
-export function memberCopy<T>(value: T): T {
+export type FieldsOfType<T, Field> = {
+    [Key in keyof T as NonNullable<T[Key]> extends Field ? Key : never]: T[Key];
+};
+export type KeysOfType<T extends FieldsOfType<any, Field>, Field> = keyof FieldsOfType<T, Field>;
+
+function memberCopy<T>(value: T): T {
     if (Array.isArray(value)) {
         return [...value] as any;
     } else if (typeof value === "object") {
         return { ...value };
     } else {
-        throw new Error("Can only memberCopy() arrays and objects.");
+        throw new Error(`Can only memberCopy() arrays and objects, got '${String(value)}'. Probably due to invalid useForm() value.`);
     }
 }
 
-/**
- * Compares 2 objects that only contain primitive fields (no object fields)
- * @returns true when different, false when 'equal', undefined when an object field was found.
- */
-export function comparePrimitiveObject<T>(a: T, b: T): boolean | undefined {
-    // Compare null and undefined
-    if (!a || !b) return a === b;
-    let ak = Object.keys(a),
-        bk = Object.keys(b);
-    let lk = ak.length > bk.length ? ak : bk;
-    for (let i = 0; i < lk.length; i++) {
-        let k = lk[i];
-        let av = a[k],
-            bv = b[k];
-        if ((typeof av === "object" && av !== null) || (typeof bv === "object" && bv !== null)) return undefined;
-        if (av !== bv) return true;
+function addDistinct<T extends any[]>(arr1: T, arr2: T) {
+    for (let i = 0; i < arr2.length; i++) {
+        if (!arr1.includes(arr2[i])) arr1.push(arr2[i]);
     }
-    return false;
 }
 
-export class FormState<T, State = DefaultState, Error extends string = DefaultError> {
+export class FormState<T extends object, State = DefaultState, Error extends string = DefaultError> {
     /**
      * The id of this form, for debugging purposes.
      */
@@ -64,15 +55,19 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
      * Should the form validate on each value change?
      */
     public validateOnChange: boolean;
+
+    /**
+     * Should the form validate when it gets mounted?
+     */
     public validateOnMount: boolean;
 
     /**
-     * The values on this form. Use setValues() to set these.
+     * The values on this form. Use `setValues()` to set these.
      */
     public readonly values: T;
 
     /**
-     * The default values on this form. Use setDefaultValues(...) to set these.
+     * The default values on this form. Use `setValues(?,?,true)` to set these.
      */
     public readonly defaultValues: T;
 
@@ -135,9 +130,7 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
     }
 
     /**
-     * Sets a value the advanced way.
-     * @param key The field to set.
-     * @param value The value to set in the field.
+     * Sets a value without calculating whether is has been modified.
      * @param dirty Is this field dirty? Leave undefined to not set any dirty value. (can always be overridden by child forms)
      * @param validate Should the form validate after value set? Overrides `validateOnChange`.
      * @param isDefault Is this the default value for the said field?
@@ -157,8 +150,12 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
     ) {
         let valueMap = isDefault ? this.defaultValues : this.values;
         if (value === undefined) {
-            if (Array.isArray(valueMap)) valueMap.splice(key as number, 1);
-            else delete valueMap[key];
+            if (Array.isArray(valueMap)) {
+                // Deleting a key in an array doesn't work, splice instead
+                valueMap.splice(key as number, 1);
+            } else {
+                delete valueMap[key];
+            }
         } else {
             valueMap[key] = value;
         }
@@ -166,16 +163,28 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
         this.dirtyMap[key] = dirty;
 
         if (notifyChild) {
-            let child = this.childMap[key];
-            if (child && value !== undefined && value !== null) {
-                child.setValues(value!, validate, isDefault, true, false);
+            let child = this.childMap[key as any];
+            if (child) {
+                child.setValues(value, validate, isDefault, true, false);
                 this.dirtyMap[key] = child.dirty;
             }
         }
 
         this.fireListeners(key);
         if (fireAny) this.fireAnyListeners(); // Will be false when using setValues, he will call fireAnyListeners and notifyParentValues itself
-        if (notifyParent) this.updateParentValues(isDefault, validate); // Will call setValueInternal on parent
+
+        if (notifyParent && this instanceof ChildFormState) {
+            this.parent.setValueInternal(
+                this.name,
+                Object.keys(valueMap).length > 0 ? memberCopy(valueMap) : undefined,
+                this.dirty,
+                validate,
+                isDefault,
+                false,
+                true,
+                true
+            );
+        }
 
         if (validate ?? (this.validateOnChange && this.validator)) this.validate();
     }
@@ -188,7 +197,7 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
      * @param isDefault Is this the default value?
      * @param notifyChild Should this form notify the child form about this change?
      * @param notifyParent Should this form notify the parent form about this change?
-     * @param setValuesWasUsed Fire all `anyListeners` after field is set? You should not touch this. (will be false for bulk sets, they will call fireAnyListeners() after every field is set)
+     * @param fireAny Fire all `anyListeners` after field is set?
      */
     public setValue<Key extends keyof T>(
         key: Key,
@@ -200,31 +209,25 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
         fireAny: boolean = true
     ) {
         // value can contain the default value or normal value. (Determined by isDefault)
+        let other = isDefault ? this.values[key] : this.defaultValues[key];
         if (typeof value === "object" && value !== null) {
             let dirty: boolean | undefined = false;
-            if (value instanceof Date) {
-                // Compare date objects
-                dirty = value?.getTime() !== (isDefault ? this.values[key] : (this.defaultValues[key] as any))?.getTime();
-            } else if (fireAny) {
-                // Compare primitive objects (objects containing only primitive fields), but only is setValues was not used (dirty value will be determined by child forms)
-                dirty = comparePrimitiveObject(value, isDefault ? this.values[key] : this.defaultValues[key]); // Is switched intentionally
-                if (dirty === undefined) {
-                    console.warn(
-                        "Do not use setValue for object in object fields, use setValueInternal instead (dirty value can not be determined), ",
-                        key,
-                        value
-                    );
-                    dirty = true;
+
+            // Compare objects if there is no child form, because it calculates the dirty value for us
+            if (!(key in this.childMap)) {
+                if (value instanceof Date && other instanceof Date) {
+                    // Compare date objects
+                    dirty = value?.getTime() !== other?.getTime();
+                } else {
+                    dirty = JSON.stringify(value) !== JSON.stringify(other);
                 }
             }
 
             this.setValueInternal(key, value, dirty, validate, isDefault, notifyChild, notifyParent, fireAny);
         } else {
             // Compare value and existing value/defaultValue which determines dirty
-            let dirty = isDefault ? value !== this.values[key] : value !== this.defaultValues[key];
-
-            // Do not set if already set
-            if (((isDefault && this.defaultValues[key] === value) || (!isDefault && this.values[key] === value)) && this.dirtyMap[key] === dirty) {
+            let dirty = value !== other;
+            if ((isDefault ? this.defaultValues[key] : this.values[key]) === value && this.dirtyMap[key] === dirty) {
                 return;
             }
 
@@ -233,25 +236,35 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
     }
 
     /**
-     * Set all values OR default values on this form.
+     * Set multiple values OR default values on this form.
      * @param values The new values to set on this form.
      * @param validate Validate? Overrides `validateOnChange`.
-     * @param isDefault Are these values the default values for this form? This function only updates values or defaultValues, not both! To set both, use `form.setDefaultValues()`.
+     * @param isDefault Leave undefined to set both `values` and `defaultValues`. Set to true to only set `defaultValues` and false to only set `values`.
      * @param notifyChild Should this form notify the child form about this change?
      * @param notifyParent Should this form notify the parent form about this change?
      */
-    public setValues(values: T, validate?: boolean, isDefault: boolean = false, notifyChild: boolean = true, notifyParent: boolean = true) {
-        let keys = Object.keys(isDefault ? this.defaultValues : this.values);
-        let newKeys = Object.keys(values);
-        for (let i = 0; i < newKeys.length; i++) {
-            if (!keys.includes(newKeys[i])) keys.push(newKeys[i]);
+    public setValues(
+        values: Partial<T> | undefined,
+        validate?: boolean,
+        isDefault?: boolean,
+        notifyChild: boolean = true,
+        notifyParent: boolean = true
+    ) {
+        if (isDefault === undefined) {
+            this.setValues(values, false, true, notifyChild, notifyParent);
+            isDefault = false;
         }
+
+        let keys = Object.keys(isDefault ? this.defaultValues : this.values);
+        let v: typeof values = values ?? {};
+        addDistinct(keys, Object.keys(v));
+
         // Traverse backwards, so when removing array items, the whole array gets shifted in the right direction
         for (let i = keys.length - 1; i >= 0; i--) {
             let key = keys[i] as keyof T;
             this.setValue(
                 key,
-                values[key],
+                v[key],
                 false, // Will validate after all values are copied
                 isDefault,
                 notifyChild,
@@ -259,22 +272,27 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
                 false // Will call fireAnyListener by itself after all values are copied, see 3 lines down
             );
         }
+
         this.fireAnyListeners();
-        if (notifyParent) this.updateParentValues(isDefault, validate);
+
+        if (notifyParent && this instanceof ChildFormState) {
+            if (typeof values === "object" && values !== null) {
+                this.parent.setValueInternal(
+                    this.name,
+                    isDefault ? memberCopy(this.defaultValues) : memberCopy(this.values),
+                    this.dirty,
+                    validate,
+                    isDefault,
+                    false,
+                    true,
+                    true
+                );
+            } else {
+                this.parent.setValueInternal(this.name, values, this.dirty, validate, isDefault, false, true, true);
+            }
+        }
 
         if (validate ?? (this.validateOnChange && this.validator)) this.validate();
-    }
-
-    /**
-     * Set both values and default values for this form. If you only want to set default values, use `setValues(...,...,true)`.
-     * @param values The new default values to set on this form.
-     * @param validate Validate? Overrides `validateOnChange`.
-     * @param notifyChild Should this form notify the child form about this change?
-     * @param notifyParent Should this form notify the parent form about this change?
-     */
-    public setDefaultValues(values: T, validate: boolean = true, notifyChild: boolean = true, notifyParent: boolean = true) {
-        this.setValues(values, false, true, notifyChild, notifyParent);
-        this.setValues(values, validate, false, notifyChild, notifyParent);
     }
 
     /**
@@ -282,12 +300,10 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
      * @returns true if the form is valid.
      */
     public async validate() {
-        if (!this.validator) {
-            return false;
-        }
+        if (!this.validator) return true;
         let r = this.validator(this.values);
         if (r instanceof Promise) r = await r;
-        this.setErrors(r);
+        this.setErrors(r ?? ({} as ErrorType<T, Error>));
         return !this.error;
     }
 
@@ -296,13 +312,11 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
      * @returns true if the form is valid.
      */
     public validateSync() {
-        if (!this.validator) {
-            return false;
-        }
+        if (!this.validator) return true;
         let r = this.validator(this.values);
         if (r instanceof Promise)
             throw new Error("validateSync() was called on a form with an asynchronous validator set, please use `await form.validate()` instead.");
-        this.setErrors(r);
+        this.setErrors(r ?? ({} as ErrorType<T, Error>));
         return !this.error;
     }
 
@@ -312,11 +326,11 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
      * @param error The error.
      * @param notifyChild Should this form notify the child form about this change?
      * @param notifyParent Should this form notify the parent form about this change?
-     * @param setValuesWasUsed
+     * @param fireAny Fire all `anyListeners` after field is set?
      */
     public setError<Key extends keyof T>(
         key: Key,
-        error: ErrorType<T[Key], Error> | undefined,
+        error: ErrorType<NonNullable<T[Key]>, Error> | undefined,
         notifyChild: boolean = true,
         notifyParent: boolean = true,
         fireAny: boolean = true
@@ -326,18 +340,17 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
         if (!error) delete this.errorMap[key];
         else this.errorMap[key] = error;
 
-        if (notifyChild && this.childMap[key]) {
-            if (typeof error === "object") {
-                let changed = this.childMap[key]!.setErrors((error as any) ?? {}, true, false);
-                if (!changed) return false;
-            } else {
-                this.childMap[key]!.setErrors({}, true, false);
-            }
+        if (notifyChild && this.childMap[key as any]) {
+            let changed = this.childMap[(key as unknown) as KeysOfType<T, object>]!.setErrors(error ?? ({} as any), true, false);
+            if (!changed && error !== undefined) return false;
         }
 
         this.fireListeners(key);
         if (fireAny) this.fireAnyListeners(); // When setValuesWasUsed, it will call fireAnyListener itself when all values were set
-        if (notifyParent) this.updateParentErrors(); // Will call setError on parent
+
+        if (notifyParent && this instanceof ChildFormState) {
+            this.parent.setError(this.name, this.error ? memberCopy(this.errorMap) : undefined, false, true);
+        }
         return true;
     }
 
@@ -347,29 +360,39 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
      * @param notifyChild Should this form notify the child form about this change?
      * @param notifyParent Should this form notify the parent form about this change?
      */
-    public setErrors(errors: ErrorMap<T, Error>, notifyChild: boolean = true, notifyParent: boolean = true) {
+    public setErrors(errors: ErrorType<T, Error>, notifyChild: boolean = true, notifyParent: boolean = true) {
         let keys = Object.keys(this.errorMap);
-        let newKeys = Object.keys(errors);
-        for (let i = 0; i < newKeys.length; i++) {
-            if (!keys.includes(newKeys[i])) keys.push(newKeys[i]);
+
+        if (typeof errors === "string") {
+            if (notifyParent && this instanceof ChildFormState) {
+                this.parent.setError(this.name, errors, false, true);
+            }
+            errors = {} as ErrorType<T, Error>;
+        } else {
+            addDistinct(keys, Object.keys(errors));
         }
+
         let changed = false;
         for (let i = keys.length; i >= 0; i--) {
             let key = keys[i] as keyof T;
             if (
                 this.setError(
                     key,
-                    errors[key] as any,
+                    (errors as ErrorMap<T, Error>)[key] as ErrorType<NonNullable<T[keyof T]>, Error>,
                     notifyChild,
-                    false, // Will call updateParentErrors by itself after all values have been copied, see 3 lines down
+                    false, // Will call this.parent.setError by itself after all values have been copied, see 3 lines down
                     false // Will call fireAnyListener by itself after all values have been copied, see 3 lines down
                 )
-            )
+            ) {
                 changed = true;
+            }
         }
         if (!changed) return false;
+
         this.fireAnyListeners();
-        if (notifyParent) this.updateParentErrors();
+        if (notifyParent && this instanceof ChildFormState) {
+            this.parent.setError(this.name, this.error ? (memberCopy(this.errorMap) as any) : undefined, false, true);
+        }
         return true;
     }
 
@@ -401,12 +424,43 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
     public setState(newState: State, notifyChild: boolean = true, notifyParent: boolean = true) {
         this._state = newState;
 
-        let c = Object.keys(this.values);
-        if (notifyChild) c.forEach((e) => this.childMap[e]?.setState(newState, notifyChild, notifyParent));
+        let c = Object.keys(this.values) as (keyof T)[];
+        if (notifyChild) c.forEach((e) => (this.childMap[e as any] as ChildFormState<T, any, State, Error>)?.setState(newState, true, false));
 
-        c.forEach((e) => this.fireListeners(e as keyof T));
+        c.forEach((e) => this.fireListeners(e));
         this.fireAnyListeners();
-        if (notifyParent) this.updateParentState();
+
+        if (notifyParent && this instanceof ChildFormState) {
+            this.parent.setState(memberCopy(this.state), false, true);
+        }
+    }
+
+    /**
+     * Creates a submit handler to pass to your `<form onSubmit={...}>`. The function executes the passed handler only if the form validates correctly.
+     * @param handler The handler to execute when this form contains no errors.
+     */
+    public handleSubmit(handler: (form: FormState<T, State, Error>, ev: React.FormEvent<HTMLFormElement>) => void | Promise<void>) {
+        async function handle(this: FormState<T, State, Error>, ev: React.FormEvent<HTMLFormElement>) {
+            ev.preventDefault();
+
+            // Show helpful warning when using buttons to submit
+            if (process.env.NODE_ENV === "development") {
+                let buttons = Array.from((ev.target as HTMLFormElement).querySelectorAll("button"));
+                let noTypeButton = buttons.find((e) => !("type" in e.attributes));
+                if (noTypeButton) {
+                    console.error(
+                        `The submitted form contains a button without a type attribute. Please populate every button in your form with either type="button" or type="submit".`,
+                        noTypeButton
+                    );
+                }
+            }
+
+            if (!(await this.validate())) return;
+            this.setState({ ...this.state, isSubmitting: true });
+            await handler(this, ev);
+            this.setState({ ...this.state, isSubmitting: false });
+        }
+        return handle.bind(this);
     }
 
     /**
@@ -473,29 +527,17 @@ export class FormState<T, State = DefaultState, Error extends string = DefaultEr
         let al = Object.keys(this.anyListeners);
         al.forEach((e) => this.anyListeners[e]!());
     }
-
-    protected updateParentValues(_isDefault: boolean, _validate: boolean | undefined) {
-        // Not implemented for root form, as it does not have a parent
-    }
-
-    protected updateParentErrors() {
-        // Not implemented for root form, as it does not have a parent
-    }
-
-    protected updateParentState() {
-        // Not implemented for root form, as it does not have a parent
-    }
 }
 
-export class ChildFormState<Parent, Key extends keyof Parent, ParentState, ParentError extends string> extends FormState<
-    NonNullable<Parent[Key]>,
-    ParentState,
-    ParentError
+export class ChildFormState<T extends FieldsOfType<any, object>, K extends KeysOfType<T, object>, State, Error extends string> extends FormState<
+    NonNullable<T[K]>,
+    State,
+    Error
 > {
-    public name: Key;
-    public readonly parent: FormState<Parent, ParentState, ParentError>;
+    public name: K;
+    public readonly parent: FormState<T, State, Error>;
 
-    public constructor(parent: FormState<Parent, ParentState, ParentError>, name: Key) {
+    public constructor(parent: FormState<T, State, Error>, name: K) {
         super(
             parent.values[name] ?? ({} as any),
             parent.defaultValues[name] ?? ({} as any),
@@ -506,26 +548,5 @@ export class ChildFormState<Parent, Key extends keyof Parent, ParentState, Paren
         );
         this.parent = parent;
         this.name = name;
-    }
-
-    protected updateParentValues(isDefault: boolean, validate: boolean | undefined) {
-        this.parent.setValueInternal(
-            this.name,
-            isDefault ? memberCopy(this.defaultValues) : memberCopy(this.values),
-            this.dirty,
-            validate,
-            isDefault,
-            false,
-            true,
-            true
-        );
-    }
-
-    protected updateParentErrors() {
-        this.parent.setError(this.name, this.error ? (memberCopy(this.errorMap) as any) : undefined, false, true);
-    }
-
-    protected updateParentState() {
-        this.parent.setState(memberCopy(this.state), false, true);
     }
 }

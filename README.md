@@ -1,16 +1,24 @@
-# Typed React form [![NPM](https://img.shields.io/npm/v/typed-react-form.svg)](https://www.npmjs.com/package/typed-react-form) [![NPM Size](https://img.shields.io/bundlephobia/minzip/typed-react-form)](https://bundlephobia.com/result?p=typed-react-form)
+<h1 align="center" width="100%">
+    Typed React form
+</h1>
 
-![vscode typescript](https://github.com/CodeStix/typed-react-form/raw/master/example/public/thumb.png)
+<p align="center" width="100%">
+    <img src="https://github.com/CodeStix/typed-react-form/raw/master/docs/images/thumbextrasmall.png"> 
+</p>
 
-A fast, completely type-checked React form state manager, focussed on typescript integration and minimal rerenders. Featuring:
+<p align="center" width="100%">
+    <a href="https://www.npmjs.com/package/typed-react-form"><img alt="NPM" src="https://img.shields.io/npm/v/typed-react-form.svg" /></a>
+    <a href="https://bundlephobia.com/result?p=typed-react-form"><img alt="NPM Size" src="https://img.shields.io/bundlephobia/minzip/typed-react-form" /></a>
+</p>
 
-- [Object fields](https://typed-react-form.codestix.nl/docs/Object-fields)
-- [Array fields](https://typed-react-form.codestix.nl/docs/Array-fields)
-- [Validation and yup integration](https://typed-react-form.codestix.nl/docs/Validation)
-- [Easily toggle fields](https://typed-react-form.codestix.nl/docs/Toggling-a-field)
-- [Listeners (subscription based state updates)](https://typed-react-form.codestix.nl/docs/useListener)
+<p align="center" width="100%">
+    <strong>A completely type-checked form builder for React with Typescript</strong>
+</p>
 
-**All of this while keeping type-checking!**
+- ✔️ **Type-checked**: Make less errors, even field names are strongly typed.
+- 🤔 **Simple**: A well [documented](https://codestix.github.io/typed-react-form/), intuitive and easy to understand api. 
+- :fire: **Fast**: Only rerenders the fields that change if used correctly. This allows you to create huge forms.
+- 📦 **Pretty Small**: [![NPM Size](https://img.shields.io/bundlephobia/minzip/typed-react-form)](https://bundlephobia.com/result?p=typed-react-form)
 
 ## Install
 
@@ -18,9 +26,18 @@ A fast, completely type-checked React form state manager, focussed on typescript
 npm install typed-react-form
 ```
 
-## [Documentation](https://typed-react-form.codestix.nl/)
+## [Documentation here](https://codestix.github.io/typed-react-form/)
 
-**You can find documentation and information on how to get started [here](https://typed-react-form.codestix.nl/).**
+## Typescript demos
+
+### Type-checked field names
+![type-checked field names](https://github.com/CodeStix/typed-react-form/raw/master/docs/images/demo-example.gif)
+
+### Type-checked custom inputs
+![type-checked custom inputs](https://github.com/CodeStix/typed-react-form/raw/master/docs/images/demo-custom.gif)
+
+### Type-checked object/array fields
+![type-checked object/array fields](https://github.com/CodeStix/typed-react-form/raw/master/docs/images/demo-objectfield.gif)
 
 ## Javascript/typescript React
 
@@ -28,11 +45,13 @@ This library is built from the ground up for React with typescript, but it also 
 
 ## Contributing
 
-Contributions are always welcome!
+Contributions are welcome.
 
-To begin developing yourself, clone this repo, and do the following:
-- `/`: contains the library source code. Use `yarn start` or `npm run start` to watch the files and build each time something changes. This way the testing application gets updated each time.
-- `example/`: contains the testing React app. Use `yarn start` or `npm run start` to start the application.
+1. Clone this repo.
+2. Install deps using `yarn`. Yarn is required because of the resolutions field in package.json, npm does not support this.
+3. Run `yarn start`, this will watch source files in `src/` and rebuild on change.
+4. Open a new terminal and navigate to `testing/`, run `yarn` and `yarn start` to start the testing application.
+5. Done! When you edit source code, it will be rebuilt and update the testing application.
 
 ## License
 

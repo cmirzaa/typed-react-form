@@ -1,5 +1,5 @@
 import React from "react";
-import { AnyListener, ArrayForm, FormInput, FormState, useChildForm, useForm, useListener } from "typed-react-form";
+import { AnyListener, ArrayField, Field, FormState, useObjectField, useForm, useListener } from "typed-react-form";
 
 interface Apple {
     type: "apple";
@@ -36,11 +36,11 @@ export default function OneOfObjectArrayForm() {
                 await new Promise((res) => setTimeout(res, 500));
                 form.setState({ isSubmitting: false });
                 console.log(form.values);
-                form.setDefaultValues(form.values);
+                form.setValues(form.values);
             }}
         >
             <a href="https://github.com/CodeStix/typed-react-form/blob/master/example/src/OneOfObjectArrayForm.tsx">View source code</a>
-            <ArrayForm
+            <ArrayField
                 form={form}
                 name="objects"
                 render={({ form, values, append, remove }) => (
@@ -49,7 +49,7 @@ export default function OneOfObjectArrayForm() {
                             {values.map((_, i) => (
                                 // Use index as key
                                 <li key={i}>
-                                    {/* Make sure to use the form given by ArrayForm! */}
+                                    {/* Make sure to use the form given by <ArrayField />! */}
                                     <BreadOrAppleForm parent={form} index={i} remove={() => remove(i)} />
                                 </li>
                             ))}
@@ -82,7 +82,7 @@ export default function OneOfObjectArrayForm() {
 
 function BreadOrAppleForm(props: { parent: FormState<FormDataObject[]>; index: number; remove: () => void }) {
     // Create a new child form with the array as the parent and index as the key
-    const form = useChildForm(props.parent, props.index);
+    const form = useObjectField(props.parent, props.index);
     // Listen for changes on the 'type' field, which contains 'apple' or 'bread'. This component will rerender when it changes
     const { value: type } = useListener(form, "type");
     return (
@@ -116,7 +116,7 @@ function AppleForm({ form }: { form: FormState<Apple> }) {
         <div>
             <h4>Apple editor</h4>
             <p>Select the color of your apple</p>
-            <FormInput form={form} type="color" name="color" />
+            <Field form={form} type="color" name="color" />
         </div>
     );
 }
@@ -126,7 +126,7 @@ function BreadForm({ form }: { form: FormState<Bread> }) {
         <div>
             <h4>Bread editor</h4>
             <p>Select the size of your bread</p>
-            <FormInput form={form} type="number" name="size" />
+            <Field form={form} type="number" name="size" />
         </div>
     );
 }

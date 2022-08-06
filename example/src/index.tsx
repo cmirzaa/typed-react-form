@@ -1,20 +1,11 @@
-import "./index.css";
-
 import React from "react";
 import ReactDOM from "react-dom";
-import App from "./App";
-import OneOfObjectForm from "./OneOfObjectForm";
-import OneOfObjectArrayForm from "./OneOfObjectArrayForm";
+import "./index.css";
+import { App } from "./App";
 
-function Router() {
-    switch (window.location.hash) {
-        case "#object-types":
-            return <OneOfObjectForm />;
-        case "#object-types-array":
-            return <OneOfObjectArrayForm />;
-        default:
-            return <App />;
-    }
-}
-
-ReactDOM.render(<Router />, document.getElementById("root"));
+ReactDOM.render(
+    <React.StrictMode>
+        <App />
+    </React.StrictMode>,
+    document.getElementById("root")
+);
